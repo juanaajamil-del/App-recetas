@@ -67,7 +67,37 @@ with tab2:
 with tab3:
     st.header("📸 Lector de Tickets")
     archivo = st.file_uploader("Sube foto de tu ticket", type=["png", "jpg"])
+    
     if archivo:
         st.image(archivo, use_container_width=True)
-        if st.button("Procesar Ticket"):
-            st.info("Analizando ticket con Gemini Vision... (Esta función requiere pasar el archivo al modelo)")
+        
+        if st.button("Analizar Ticket"):
+            with st.spinner("Leyendo ticket..."):
+                # Llamada multimodal a Gemini
+                bytes_data = archivo.getvalue()
+                response = model.generate_content([
+                    {"mime_type": "image/jpeg", "data": bytes_data},
+                    "Extrae todos los ingredientes o productos de este ticket. Devuelve una lista JSON limpia."
+                ])
+                
+                # Procesar y guardar en sesión para validar
+                try:
+                    lista_detectada = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+                    st.session_state.productos_detectados = lista_detectada
+                except:
+                    st.error("No pude leer bien el ticket. Prueba con otra foto.")
+
+    # Si hay productos detectados, mostramos para validar
+    if 'productos_detectados' in st.session_state:
+        st.subheader("✅ Productos detectados - Valida antes de guardar:")
+        for i, prod in enumerate(st.session_state.productos_detectados):
+            st.session_state.productos_detectados[i] = st.text_input(f"Producto {i+1}", value=prod)
+        
+        if st.button("Confirmar y añadir a la Despensa"):
+            with st.spinner("Guardando en tu hoja de cálculo..."):
+                for item in st.session_state.productos_detectados:
+                    if guardar_en_sheets(item):
+                        st.session_state.despensa.append(item)
+                st.success("¡Despensa actualizada con éxito!")
+                del st.session_state.productos_detectados # Limpiamos la caché
+                st.rerun()
