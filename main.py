@@ -1,45 +1,49 @@
 import streamlit as st
 import pandas as pd
+import requests
 
-# Configuración de la página
-st.set_page_config(page_title="Mi Menú Inteligente", page_icon="🥗")
+# URL de tu "puente" de Google Apps Script
+URL_API = "https://script.google.com/macros/s/AKfycbzo01XOpLx8KjumxpUAuoyYoPzy86OWVlftmfU-vslNcbGZf0B8HX7ASdnsrfDD-Ls49w/exec"
 
-st.title("🥗 Generador de Menús Inteligente")
-st.subheader("Optimiza tu compra y ahorra dinero")
+st.set_page_config(page_title="Mi Despensa Inteligente", page_icon="🍳")
 
-# --- SECCIÓN DE PERFIL ---
-with st.sidebar:
-    st.header("Tu Perfil")
-    personas = st.number_input("¿Cuántas personas?", min_value=1, max_value=10, value=2)
-    presupuesto = st.select_slider("Presupuesto semanal", options=["Bajo", "Medio", "Alto"])
-    preferencias = st.multiselect("Preferencias", ["Legumbres", "Pollo", "Pescado", "Pasta", "Verdura"], ["Verdura", "Pollo"])
-    odio = st.text_input("Alimentos que NO quiero (ej. Cebolla)")
+st.title("🍳 Mi Despensa Inteligente")
 
-# --- LÓGICA DE LA APP ---
-if st.button("Generar Menú y Lista de la Compra"):
-    st.info("Generando plan optimizado...")
-    
-    # Simulación de menú optimizado (Aquí es donde luego conectaremos con la IA de Gemini)
-    # Por ahora, para que pruebes la app, generamos un ejemplo funcional:
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.success("📅 Menú Semanal")
-        menu = {
-            "Día": ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"],
-            "Comida": ["Lentejas con verduras", "Pollo al curry", "Ensalada de lentejas (Sobrante)", "Salteado de pollo y brócoli", "Crema de brócoli (Sobrante)"],
-            "Cena": ["Tortilla francesa", "Crema de verduras", "Pescado al horno", "Ensalada mixta", "Pizza casera"]
-        }
-        st.table(pd.DataFrame(menu))
-        
-    with col2:
-        st.warning("🛒 Lista de la Compra (Optimizada)")
-        st.write("- **Lentejas:** 1 paquete (usado en 2 platos)")
-        st.write("- **Pollo:** 500g (usado en 2 platos)")
-        st.write("- **Brócoli:** 1 pieza grande (usado en 2 platos)")
-        st.write("- **Huevos:** 1 docena")
-        st.caption("Nota: Se han aprovechado los sobrantes del Lunes y Jueves para ahorrar un 20%.")
+# Función para modificar datos vía tu Web App
+def modificar_despensa(ingrediente, cantidad, accion):
+    datos = {"ingrediente": ingrediente, "cantidad": cantidad, "action": accion}
+    try:
+        response = requests.post(URL_API, json=datos)
+        return response.status_code == 200
+    except Exception as e:
+        st.error(f"Error al conectar con la despensa: {e}")
+        return False
 
+# Interfaz de gestión
+st.subheader("Control de inventario")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    ing = st.text_input("Ingrediente")
+with col2:
+    cant = st.number_input("Cantidad", min_value=0)
+with col3:
+    st.write("Acciones:")
+    if st.button("Añadir"):
+        if modificar_despensa(ing, cant, "add"):
+            st.success("¡Añadido!")
+    if st.button("Actualizar"):
+        if modificar_despensa(ing, cant, "update"):
+            st.success("¡Actualizado!")
+
+# Visualización de cómo fluyen los datos entre tu App y la Hoja
 st.write("---")
-st.caption("Usa el menú lateral para ajustar tus preferencias.")
+st.info("Nota: Tu aplicación envía los datos a través del script que configuramos, manteniendo tu hoja siempre al día.")
+
+
+
+# Aquí es donde integrarás tu lógica de Gemini para el menú
+st.subheader("Generar menú semanal")
+if st.button("Cocinar algo hoy"):
+    st.write("Analizando tu despensa...")
+    # Aquí puedes llamar a tu modelo de IA para sugerir platos
