@@ -11,7 +11,7 @@ genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('models/gemini-3-flash-preview')
 
 # Tu URL de Google Apps Script
-URL_API = "https://script.google.com/macros/s/AKfycbzo01XOpLx8KjumxpUAuoyYoPzy86OWVlftmfU-vslNcbGZf0B8HX7ASdnsrfDD-Ls49w/exec"
+URL_API = "https://script.google.com/macros/s/AKfycbyqRDVhhwL7jrR60IqUVa23BbJblCRh6wmhFYvPSwnLxQqbYgQvNwXMi2O5BYs_68kbdw/exec"
 
 # --- FUNCIONES DE CONEXIÓN ---
 def guardar_en_sheets(ingrediente, cantidad="1"):
