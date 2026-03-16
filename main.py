@@ -1,32 +1,52 @@
 import streamlit as st
-import pandas as pd
+import google.generativeai as genai
+import json
 import requests
 
-# ... (URL_API y función modificar_despensa igual que antes)
+# 1. Configuración
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash')
+URL_API = "https://script.google.com/macros/s/AKfycbzo01XOpLx8KjumxpUAuoyYoPzy86OWVlftmfU-vslNcbGZf0B8HX7ASdnsrfDD-Ls49w/exec"
 
+st.set_page_config(page_title="Despensa Inteligente", page_icon="🍳")
 st.title("🍳 Mi Despensa Inteligente")
 
-# 1. Simulación de datos si la despensa está vacía
-if 'despensa' not in st.session_state:
-    st.session_state.despensa = pd.DataFrame(columns=["Ingrediente", "Cantidad"])
+# 2. Funciones de comunicación
+def modificar_despensa(ingrediente, cantidad, accion):
+    datos = {"ingrediente": ingrediente, "cantidad": cantidad, "action": accion}
+    try:
+        response = requests.post(URL_API, json=datos)
+        return response.status_code == 200
+    except:
+        return False
 
-# 2. Interfaz inteligente
-st.subheader("Tu menú de la semana")
+def generar_menu_semanal():
+    prompt = """
+    Eres un experto en nutrición y ahorro. Genera un menú semanal para 7 días optimizando ingredientes comunes.
+    Devuélveme la respuesta ÚNICAMENTE en formato JSON:
+    {
+      "menu": {"Lunes": "...", "Martes": "...", ...},
+      "lista_compra_total": ["ingrediente1", "ingrediente2", ...]
+    }
+    """
+    response = model.generate_content(prompt)
+    return json.loads(response.text.replace("```json", "").replace("```", ""))
 
-if st.session_state.despensa.empty:
-    st.warning("¡Tu despensa está vacía! Generaré un menú sugerido y una lista de la compra.")
-    if st.button("Generar menú desde cero"):
-        st.write("IA: Te sugiero un menú mediterráneo. Ingredientes necesarios: Arroz, Tomate, Pollo.")
-        st.session_state.lista_compra = ["Arroz", "Tomate", "Pollo"]
-else:
-    st.success("Analizando tu despensa actual...")
-    # Aquí llamaremos a Gemini en el siguiente paso
+# 3. Interfaz Principal
+if st.button("Generar menú semanal optimizado"):
+    with st.spinner("La IA está calculando el menú más económico..."):
+        data = generar_menu_semanal()
+        st.session_state.menu_data = data
+        st.rerun()
 
-# 3. Gestión de compra
-if 'lista_compra' in st.session_state:
+if 'menu_data' in st.session_state:
+    st.subheader("Tu menú semanal")
+    st.write(st.session_state.menu_data["menu"])
+    
     st.subheader("🛒 Lista de la compra")
-    st.write(st.session_state.lista_compra)
-    if st.button("Añadir todo a la despensa"):
-        for item in st.session_state.lista_compra:
+    st.write(st.session_state.menu_data["lista_compra_total"])
+    
+    if st.button("Añadir toda la lista a mi despensa"):
+        for item in st.session_state.menu_data["lista_compra_total"]:
             modificar_despensa(item, 1, "add")
-        st.success("¡Despensa actualizada!")
+        st.success("¡Despensa actualizada en Google Sheets!")
