@@ -10,25 +10,30 @@ st.set_page_config(page_title="Chef Inteligente Pro", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('models/gemini-3-flash-preview')
 
-# Tu URL de Google Apps Script
-URL_API = "https://script.google.com/macros/s/AKfycbyqRDVhhwL7jrR60IqUVa23BbJblCRh6wmhFYvPSwnLxQqbYgQvNwXMi2O5BYs_68kbdw/exec"
+# URL corregida (quitada la h extra)
+URL_API = "https://script.google.com/macros/s/AKfycbwxRVRKIPux8LEnKPe2kgtTGLuT1iZXCmOxCHV73Gb0l0UiA8-CBcEPipTwRpQF222O6g/exec"
 
 # --- FUNCIONES DE CONEXIÓN ---
-def guardar_en_sheets(ingrediente, cantidad="1"):
-    """Envía un ingrediente a tu Google Sheets con diagnóstico de errores"""
+
+def guardar_en_sheets(ingrediente):
+    """Clasifica con IA y envía a Google Sheets"""
     try:
-        datos = {"ingrediente": ingrediente, "cantidad": cantidad, "action": "add"}
+        # 1. La IA clasifica el producto
+        prompt_cat = f"Clasifica '{ingrediente}' en una de estas categorías: Verdura, Carne, Lácteo, Fruta, Granos, Limpieza, Otros. Responde solo con la palabra."
+        cat_response = model.generate_content(prompt_cat)
+        categoria = cat_response.text.strip()
+        
+        # 2. Enviamos a Google
+        datos = {"ingrediente": ingrediente, "categoria": categoria}
         response = requests.post(URL_API, json=datos, timeout=10)
         
         if response.status_code == 200:
             return True
         else:
-            # Si Google responde pero con error, lo mostramos
-            st.error(f"Error en Google Sheets ({response.status_code}): {response.text}")
+            st.error(f"Error en Google Sheets: {response.status_code}")
             return False
     except Exception as e:
-        # Si ni siquiera hay conexión, lo mostramos
-        st.error(f"Error de conexión con el script: {e}")
+        st.error(f"Error de conexión: {e}")
         return False
 
 def generar_menu():
@@ -58,9 +63,9 @@ with tab1:
     if st.button("Añadir"):
         if guardar_en_sheets(nuevo_item):
             st.session_state.despensa.append(nuevo_item)
-            st.success(f"{nuevo_item} añadido correctamente a la nube.")
+            st.success(f"{nuevo_item} añadido y clasificado en la nube.")
         else:
-            st.warning("Se guardó en la app, pero falló el envío a Google Sheets.")
+            st.warning("Hubo un problema al sincronizar.")
     
     for item in st.session_state.despensa:
         st.write(f"✅ {item}")
@@ -82,7 +87,6 @@ with tab3:
     archivo = st.file_uploader("Sube foto de tu ticket", type=["png", "jpg", "jpeg"])
     
     if archivo:
-        # Corregir rotación visual (opcional, ajusta si sale girada)
         img = Image.open(archivo)
         st.image(img, caption="Ticket subido", use_container_width=True)
         
@@ -93,21 +97,20 @@ with tab3:
                     {"mime_type": "image/jpeg", "data": bytes_data},
                     "Extrae los productos de este ticket. Devuelve solo una lista JSON de strings."
                 ])
-                
                 try:
-                    lista_detectada = json.loads(response.text.replace("```json", "").replace("```", "").strip())
-                    st.session_state.productos_detectados = lista_detectada
+                    texto_limpio = response.text.replace("```json", "").replace("```", "").strip()
+                    st.session_state.productos_detectados = json.loads(texto_limpio)
                 except:
                     st.error("No se pudo procesar el formato del ticket.")
 
     if 'productos_detectados' in st.session_state:
         st.subheader("✅ Valida los productos:")
         for i, prod in enumerate(st.session_state.productos_detectados):
-            st.session_state.productos_detectados[i] = st.text_input(f"Prod {i+1}", value=prod)
+            st.session_state.productos_detectados[i] = st.text_input(f"Prod {i+1}", value=prod, key=f"input_{i}")
         
         if st.button("Confirmar y enviar a la nube"):
             exitos = 0
-            with st.spinner("Sincronizando con Google Sheets..."):
+            with st.spinner("Sincronizando..."):
                 for item in st.session_state.productos_detectados:
                     if guardar_en_sheets(item):
                         st.session_state.despensa.append(item)
