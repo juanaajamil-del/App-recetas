@@ -90,18 +90,55 @@ with tab3:
     archivo = st.file_uploader("Sube foto de tu ticket", type=["png", "jpg", "jpeg"])
     
     if archivo:
+        img = Image.open(archivo)
+        st.image(img, caption="Ticket subido", use_container_width=True)
+        
         if st.button("Analizar Ticket"):
-            bytes_data = archivo.getvalue()
-            response = model.generate_content([
-                {"mime_type": "image/jpeg", "data": bytes_data},
-                "Extrae los productos. Devuelve solo una lista JSON."
-            ])
-            st.session_state.productos_detectados = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+            with st.spinner("Leyendo ticket con IA..."):
+                try:
+                    bytes_data = archivo.getvalue()
+                    # Pedimos explícitamente el formato y forzamos a que no dé explicaciones
+                    prompt_ticket = "Extrae los nombres de los productos de este ticket. Devuelve exclusivamente una lista en formato JSON de strings, sin texto adicional. Ejemplo: [\"manzanas\", \"detergente\"]"
+                    
+                    response = model.generate_content([
+                        {"mime_type": "image/jpeg", "data": bytes_data},
+                        prompt_ticket
+                    ])
+                    
+                    # Limpieza agresiva de la respuesta
+                    texto_raw = response.text
+                    if "```json" in texto_raw:
+                        texto_limpio = texto_raw.split("```json")[1].split("```")[0].strip()
+                    elif "```" in texto_raw:
+                        texto_limpio = texto_raw.split("```")[1].split("```")[0].strip()
+                    else:
+                        texto_limpio = texto_raw.strip()
+                    
+                    st.session_state.productos_detectados = json.loads(texto_limpio)
+                    st.rerun() # Recargamos para mostrar los inputs de validación
+                except Exception as e:
+                    st.error(f"Error al procesar el ticket: {e}")
+                    st.write("Respuesta de la IA (para depurar):", response.text if 'response' in locals() else "Sin respuesta")
 
     if 'productos_detectados' in st.session_state:
-        if st.button("Confirmar y filtrar no comestibles"):
-            for item in st.session_state.productos_detectados:
-                if guardar_en_sheets(item) == True:
+        st.subheader("✅ Valida los productos:")
+        # Creamos una copia para editar
+        productos_editados = []
+        for i, prod in enumerate(st.session_state.productos_detectados):
+            nuevo_valor = st.text_input(f"Producto {i+1}", value=prod, key=f"ticket_prod_{i}")
+            productos_editados.append(nuevo_valor)
+        
+        if st.button("Confirmar y filtrar"):
+            exitos = 0
+            for item in productos_editados:
+                res = guardar_en_sheets(item)
+                if res == True:
                     st.session_state.despensa.append(item)
+                    exitos += 1
+            
+            if exitos > 0:
+                st.success(f"¡Sincronizados {exitos} productos comestibles!")
+            
+            # Limpiamos la lista de detectados tras procesar
             del st.session_state.productos_detectados
             st.rerun()
