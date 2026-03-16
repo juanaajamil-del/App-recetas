@@ -10,30 +10,34 @@ st.set_page_config(page_title="Chef Inteligente Pro", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('models/gemini-3-flash-preview')
 
-# URL corregida (quitada la h extra)
 URL_API = "https://script.google.com/macros/s/AKfycbwxRVRKIPux8LEnKPe2kgtTGLuT1iZXCmOxCHV73Gb0l0UiA8-CBcEPipTwRpQF222O6g/exec"
 
 # --- FUNCIONES DE CONEXIÓN ---
 
 def guardar_en_sheets(ingrediente):
-    """Clasifica con IA y envía a Google Sheets"""
+    """Clasifica con IA, filtra no comestibles y envía a Google Sheets"""
     try:
-        # 1. La IA clasifica el producto
-        prompt_cat = f"Clasifica '{ingrediente}' en una de estas categorías: Verdura, Carne, Lácteo, Fruta, Granos, Limpieza, Otros. Responde solo con la palabra."
-        cat_response = model.generate_content(prompt_cat)
-        categoria = cat_response.text.strip()
+        # 1. La IA clasifica y decide si es comestible
+        prompt = f"""Analiza el producto: '{ingrediente}'.
+        Determina si es un producto alimenticio.
+        Responde exclusivamente en formato JSON: {{"es_comestible": true/false, "categoria": "..."}}
+        Categorías posibles: Verdura, Carne, Lácteo, Fruta, Granos, Limpieza, Otros.
+        Si es un producto de limpieza, bolsa, o no comestible, marca es_comestible como false."""
         
+        response = model.generate_content(prompt)
+        resultado = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+        
+        if not resultado.get("es_comestible", False):
+            st.info(f"Omitido: '{ingrediente}' no es un producto alimenticio.")
+            return "omitido"
+
         # 2. Enviamos a Google
-        datos = {"ingrediente": ingrediente, "categoria": categoria}
+        datos = {"ingrediente": ingrediente, "categoria": resultado["categoria"]}
         response = requests.post(URL_API, json=datos, timeout=10)
         
-        if response.status_code == 200:
-            return True
-        else:
-            st.error(f"Error en Google Sheets: {response.status_code}")
-            return False
+        return True if response.status_code == 200 else False
     except Exception as e:
-        st.error(f"Error de conexión: {e}")
+        st.error(f"Error: {e}")
         return False
 
 def generar_menu():
@@ -43,11 +47,10 @@ def generar_menu():
     texto = response.text.replace("```json", "").replace("```", "").strip()
     return json.loads(texto)
 
-# --- ESTILO VISUAL PRO ---
+# --- ESTILO VISUAL ---
 st.markdown("""
     <style>
     .stButton>button { border-radius: 20px; width: 100%; border: 1px solid #FF4B4B; }
-    .stExpander { border-radius: 10px; border: 1px solid #ddd; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -61,20 +64,20 @@ with tab1:
     
     nuevo_item = st.text_input("Añadir ingrediente manualmente:")
     if st.button("Añadir"):
-        if guardar_en_sheets(nuevo_item):
+        res = guardar_en_sheets(nuevo_item)
+        if res == True:
             st.session_state.despensa.append(nuevo_item)
-            st.success(f"{nuevo_item} añadido y clasificado en la nube.")
-        else:
-            st.warning("Hubo un problema al sincronizar.")
-    
+            st.success(f"¡{nuevo_item} añadido!")
+        elif res == False:
+            st.error("Error al sincronizar.")
+
     for item in st.session_state.despensa:
         st.write(f"✅ {item}")
 
 with tab2:
     st.header("📅 Menú de la semana")
-    if st.button("Generar Menú Semanal"):
-        with st.spinner("Creando tu menú gourmet..."):
-            st.session_state.menu = generar_menu()
+    if st.button("Generar Menú"):
+        st.session_state.menu = generar_menu()
             
     if 'menu' in st.session_state:
         for dia, comidas in st.session_state.menu.items():
@@ -87,36 +90,18 @@ with tab3:
     archivo = st.file_uploader("Sube foto de tu ticket", type=["png", "jpg", "jpeg"])
     
     if archivo:
-        img = Image.open(archivo)
-        st.image(img, caption="Ticket subido", use_container_width=True)
-        
         if st.button("Analizar Ticket"):
-            with st.spinner("Leyendo ticket con IA..."):
-                bytes_data = archivo.getvalue()
-                response = model.generate_content([
-                    {"mime_type": "image/jpeg", "data": bytes_data},
-                    "Extrae los productos de este ticket. Devuelve solo una lista JSON de strings."
-                ])
-                try:
-                    texto_limpio = response.text.replace("```json", "").replace("```", "").strip()
-                    st.session_state.productos_detectados = json.loads(texto_limpio)
-                except:
-                    st.error("No se pudo procesar el formato del ticket.")
+            bytes_data = archivo.getvalue()
+            response = model.generate_content([
+                {"mime_type": "image/jpeg", "data": bytes_data},
+                "Extrae los productos. Devuelve solo una lista JSON."
+            ])
+            st.session_state.productos_detectados = json.loads(response.text.replace("```json", "").replace("```", "").strip())
 
     if 'productos_detectados' in st.session_state:
-        st.subheader("✅ Valida los productos:")
-        for i, prod in enumerate(st.session_state.productos_detectados):
-            st.session_state.productos_detectados[i] = st.text_input(f"Prod {i+1}", value=prod, key=f"input_{i}")
-        
-        if st.button("Confirmar y enviar a la nube"):
-            exitos = 0
-            with st.spinner("Sincronizando..."):
-                for item in st.session_state.productos_detectados:
-                    if guardar_en_sheets(item):
-                        st.session_state.despensa.append(item)
-                        exitos += 1
-                
-                if exitos > 0:
-                    st.success(f"¡Sincronizados {exitos} productos!")
-                    del st.session_state.productos_detectados
-                    st.rerun()
+        if st.button("Confirmar y filtrar no comestibles"):
+            for item in st.session_state.productos_detectados:
+                if guardar_en_sheets(item) == True:
+                    st.session_state.despensa.append(item)
+            del st.session_state.productos_detectados
+            st.rerun()
