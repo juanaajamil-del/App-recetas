@@ -2,48 +2,31 @@ import streamlit as st
 import pandas as pd
 import requests
 
-# URL de tu "puente" de Google Apps Script
-URL_API = "https://script.google.com/macros/s/AKfycbzo01XOpLx8KjumxpUAuoyYoPzy86OWVlftmfU-vslNcbGZf0B8HX7ASdnsrfDD-Ls49w/exec"
-
-st.set_page_config(page_title="Mi Despensa Inteligente", page_icon="🍳")
+# ... (URL_API y función modificar_despensa igual que antes)
 
 st.title("🍳 Mi Despensa Inteligente")
 
-# Función para modificar datos vía tu Web App
-def modificar_despensa(ingrediente, cantidad, accion):
-    datos = {"ingrediente": ingrediente, "cantidad": cantidad, "action": accion}
-    try:
-        response = requests.post(URL_API, json=datos)
-        return response.status_code == 200
-    except Exception as e:
-        st.error(f"Error al conectar con la despensa: {e}")
-        return False
+# 1. Simulación de datos si la despensa está vacía
+if 'despensa' not in st.session_state:
+    st.session_state.despensa = pd.DataFrame(columns=["Ingrediente", "Cantidad"])
 
-# Interfaz de gestión
-st.subheader("Control de inventario")
-col1, col2, col3 = st.columns(3)
+# 2. Interfaz inteligente
+st.subheader("Tu menú de la semana")
 
-with col1:
-    ing = st.text_input("Ingrediente")
-with col2:
-    cant = st.number_input("Cantidad", min_value=0)
-with col3:
-    st.write("Acciones:")
-    if st.button("Añadir"):
-        if modificar_despensa(ing, cant, "add"):
-            st.success("¡Añadido!")
-    if st.button("Actualizar"):
-        if modificar_despensa(ing, cant, "update"):
-            st.success("¡Actualizado!")
+if st.session_state.despensa.empty:
+    st.warning("¡Tu despensa está vacía! Generaré un menú sugerido y una lista de la compra.")
+    if st.button("Generar menú desde cero"):
+        st.write("IA: Te sugiero un menú mediterráneo. Ingredientes necesarios: Arroz, Tomate, Pollo.")
+        st.session_state.lista_compra = ["Arroz", "Tomate", "Pollo"]
+else:
+    st.success("Analizando tu despensa actual...")
+    # Aquí llamaremos a Gemini en el siguiente paso
 
-# Visualización de cómo fluyen los datos entre tu App y la Hoja
-st.write("---")
-st.info("Nota: Tu aplicación envía los datos a través del script que configuramos, manteniendo tu hoja siempre al día.")
-
-
-
-# Aquí es donde integrarás tu lógica de Gemini para el menú
-st.subheader("Generar menú semanal")
-if st.button("Cocinar algo hoy"):
-    st.write("Analizando tu despensa...")
-    # Aquí puedes llamar a tu modelo de IA para sugerir platos
+# 3. Gestión de compra
+if 'lista_compra' in st.session_state:
+    st.subheader("🛒 Lista de la compra")
+    st.write(st.session_state.lista_compra)
+    if st.button("Añadir todo a la despensa"):
+        for item in st.session_state.lista_compra:
+            modificar_despensa(item, 1, "add")
+        st.success("¡Despensa actualizada!")
