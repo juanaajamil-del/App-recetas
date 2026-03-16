@@ -1,43 +1,73 @@
 import streamlit as st
 import google.generativeai as genai
-import requests
 import json
+import requests  # <-- Importamos requests para conectar con tu Sheet
 
-# Configuración inicial
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="Chef Inteligente Pro", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('models/gemini-3-flash-preview')
 
-st.set_page_config(page_title="Chef Inteligente Pro", layout="wide")
-st.title("🍳 Despensa y Menú Inteligente")
+# Tu URL de Google Apps Script
+URL_API = "https://script.google.com/macros/s/AKfycbzo01XOpLx8KjumxpUAuoyYoPzy86OWVlftmfU-vslNcbGZf0B8HX7ASdnsrfDD-Ls49w/exec"
 
-# Tabs de navegación profesional
-tab1, tab2, tab3 = st.tabs(["🛒 Compras y Tickets", "🍳 Tu Despensa", "📅 Menú Semanal"])
+# --- FUNCIONES DE CONEXIÓN ---
+def guardar_en_sheets(ingrediente, cantidad="1"):
+    """Envía un ingrediente a tu Google Sheets"""
+    try:
+        response = requests.post(URL_API, json={"ingrediente": ingrediente, "cantidad": cantidad, "action": "add"})
+        return response.status_code == 200
+    except:
+        return False
+
+def generar_menu():
+    prompt = """Genera un menú semanal (Lunes-Domingo) con Comida y Cena. Devuelve SÓLO JSON:
+    {"Lunes": {"Comida": "...", "Cena": "..."}, "Martes": {...}, ...}"""
+    response = model.generate_content(prompt)
+    texto = response.text.replace("```json", "").replace("```", "").strip()
+    return json.loads(texto)
+
+# --- ESTILO VISUAL PRO ---
+st.markdown("""
+    <style>
+    .stButton>button { border-radius: 20px; width: 100%; border: 1px solid #FF4B4B; }
+    .stExpander { border-radius: 10px; border: 1px solid #ddd; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- INTERFAZ ---
+st.title("🍳 Chef Inteligente Pro")
+tab1, tab2, tab3 = st.tabs(["🛒 Despensa", "📅 Menú Semanal", "📸 Ticket"])
 
 with tab1:
-    st.header("Gestión de Compras")
-    # Lector de tickets (OCR mediante Gemini)
-    uploaded_file = st.file_uploader("Sube una foto de tu ticket", type=["jpg", "png"])
-    if uploaded_file:
-        st.image(uploaded_file, caption="Procesando ticket...")
-        # Aquí llamarías a Gemini Vision para extraer ingredientes
-        st.success("Ticket procesado. Ingredientes extraídos: Tomate, Leche, Pollo.")
+    st.header("🛒 Mi Despensa")
+    if 'despensa' not in st.session_state: st.session_state.despensa = []
+    
+    nuevo_item = st.text_input("Añadir ingrediente manualmente:")
+    if st.button("Añadir"):
+        if guardar_en_sheets(nuevo_item):
+            st.session_state.despensa.append(nuevo_item)
+            st.success(f"{nuevo_item} añadido.")
+    
+    for item in st.session_state.despensa:
+        st.write(f"✅ {item}")
 
 with tab2:
-    st.header("Estado de tu Despensa")
-    # Simulación de lectura de tu Google Sheets (o integración real)
-    ingredientes = {"Tomate": 2, "Pollo": 1, "Arroz": 500}
-    for item, cant in ingredientes.items():
-        col_a, col_b = st.columns([3, 1])
-        col_a.write(f"**{item}** - {cant} unidades")
-        if col_b.button("Añadir al menú", key=item):
-            st.info(f"{item} añadido al plan.")
+    st.header("📅 Menú de la semana")
+    if st.button("Generar Menú Semanal"):
+        with st.spinner("Creando tu menú gourmet..."):
+            st.session_state.menu = generar_menu()
+            
+    if 'menu' in st.session_state:
+        for dia, comidas in st.session_state.menu.items():
+            with st.expander(f"📅 {dia}"):
+                st.write(f"**🍽️ Comida:** {comidas['Comida']}")
+                st.write(f"**🌙 Cena:** {comidas['Cena']}")
 
 with tab3:
-    st.header("Planificación semanal")
-    if st.button("Generar menú detallado"):
-        # Prompt mejorado para comida y cena
-        prompt = """
-        Genera un menú semanal para 7 días incluyendo comida y cena.
-        Devuelve JSON con estructura: {"Lunes": {"Comida": "...", "Cena": "..."}, ...}
-        """
-        # ... lógica de llamada a Gemini ...success("¡Despensa actualizada en Google Sheets!")
+    st.header("📸 Lector de Tickets")
+    archivo = st.file_uploader("Sube foto de tu ticket", type=["png", "jpg"])
+    if archivo:
+        st.image(archivo, use_container_width=True)
+        if st.button("Procesar Ticket"):
+            st.info("Analizando ticket con Gemini Vision... (Esta función requiere pasar el archivo al modelo)")
