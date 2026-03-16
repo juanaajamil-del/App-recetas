@@ -5,7 +5,7 @@ import requests
 
 # 1. Configuración
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel(model_name='gemini-1.5-flash')
 URL_API = "https://script.google.com/macros/s/AKfycbzo01XOpLx8KjumxpUAuoyYoPzy86OWVlftmfU-vslNcbGZf0B8HX7ASdnsrfDD-Ls49w/exec"
 
 st.set_page_config(page_title="Despensa Inteligente", page_icon="🍳")
