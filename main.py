@@ -15,7 +15,7 @@ if "GOOGLE_API_KEY" not in st.secrets:
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# URL actualizada con la que me has proporcionado
+# Tu URL de Google Apps Script
 URL_API = "https://script.google.com/macros/s/AKfycbxzFILdNWLMMAy6srZK8ZHJ41EU6IKJZwCoM1kziQZA_ZfFgQirWFOeXNB7_cmcUzbQ_w/exec"
 
 # --- 1. FUNCIONES DE APOYO ---
@@ -81,6 +81,81 @@ with t1:
             with col_txt:
                 st.write(f"✅ {item}")
             with col_del:
+                # CORREGIDO: Paréntesis cerrado correctamente
                 if st.button("🗑️", key=f"del_{item}"):
                     payload = {"tipo": "borrar_ingrediente", "ingrediente": item}
-                    requests.post(URL_API, json
+                    requests.post(URL_API, json=payload)
+                    st.session_state.despensa.remove(item)
+                    st.rerun()
+    else:
+        st.info("la despensa está vacía.")
+
+with t2:
+    st.header("📅 planificador rápido")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✨ generar menú creativo"):
+            with st.spinner("generando..."):
+                st.session_state.p_creativa = generar_menu_completo()
+    with c2:
+        if st.button("♻️ generar menú aprovechamiento"):
+            with st.spinner("generando..."):
+                st.session_state.p_aprovecho = generar_menu_completo(st.session_state.despensa)
+
+    col_izq, col_der = st.columns(2)
+    configs = [("p_creativa", col_izq, "creativa"), ("p_aprovecho", col_der, "aprovechamiento")]
+    
+    for key, col, nombre in configs:
+        with col:
+            if key in st.session_state:
+                st.subheader(f"opción {nombre}")
+                for dia, platos in st.session_state[key].items():
+                    with st.expander(f"📅 {dia}"):
+                        st.write(f"🍴 {platos['comida']}")
+                        if st.button(f"usar comida {dia}", key=f"btn_c_{key}_{dia}"):
+                            st.session_state.menu_oficial[dia]["comida"] = platos['comida']
+                        st.write(f"🌙 {platos['cena']}")
+                        if st.button(f"usar cena {dia}", key=f"btn_n_{key}_{dia}"):
+                            st.session_state.menu_oficial[dia]["cena"] = platos['cena']
+
+    st.write("---")
+    st.subheader("📍 selección semanal")
+    st.table(st.session_state.menu_oficial)
+    
+    if st.button("💾 finalizar y guardar menú"):
+        with st.spinner("guardando en la nube..."):
+            payload = {"tipo": "menu_completo", "contenido": st.session_state.menu_oficial}
+            requests.post(URL_API, json=payload)
+            st.session_state.lista_compra = generar_lista_compra(st.session_state.menu_oficial, st.session_state.despensa)
+            st.success("¡menú guardado!")
+
+with t3:
+    st.header("📝 mi semana")
+    if 'lista_compra' in st.session_state:
+        cm, cl = st.columns([2, 1])
+        with cm:
+            for dia, platos in st.session_state.menu_oficial.items():
+                with st.expander(f"📅 {dia}"):
+                    st.write(f"**comida:** {platos['comida']}\n\n**cena:** {platos['cena']}")
+        with cl:
+            st.subheader("🛒 lista compra")
+            for ing in st.session_state.lista_compra: st.checkbox(ing, key=f"lc_{ing}")
+    else: st.info("selecciona platos en el planificador.")
+
+with t4:
+    st.header("📸 lector de tickets")
+    archivo = st.file_uploader("sube ticket", type=["png", "jpg", "jpeg"])
+    if archivo:
+        if st.button("analizar ticket"):
+            with st.spinner("leyendo..."):
+                img_data = archivo.getvalue()
+                res = model.generate_content([{"mime_type": "image/jpeg", "data": img_data}, "extrae productos lista json strings minúsculas."])
+                st.session_state.detectados = json.loads(res.text.replace("```json", "").replace("```", "").strip())
+                st.rerun()
+
+    if 'detectados' in st.session_state:
+        txt = st.text_area("valida la lista:", value=", ".join(st.session_state.detectados))
+        if st.button("guardar ticket"):
+            procesar_lote_ingredientes(txt)
+            del st.session_state.detectados
+            st.rerun()
