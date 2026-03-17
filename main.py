@@ -15,7 +15,7 @@ if "GOOGLE_API_KEY" not in st.secrets:
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-URL_API = "https://script.google.com/macros/s/AKfycbxzFILdNWLMMAy6srZK8ZHJ41EU6IKJZwCoM1kziQZA_ZfFgQirWFOeXNB7_cmcUzbQ_w/exec"
+URL_API = "https://script.google.com/macros/s/AKfycbwPgCPBDH_G__oUNXjcvnHytHg9aeL3DmmtDcMiPvxhs04t6cL9jAgHygYtCK2MztcfaQ/exec"
 
 # --- 1. FUNCIONES DE APOYO ---
 
