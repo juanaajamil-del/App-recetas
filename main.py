@@ -8,7 +8,7 @@ import io
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Chef Inteligente Pro", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-model = genai.GenerativeModel('gemini-2.0-flash')
+model = genai.GenerativeModel('gemini-2.0-flash-exp')
 
 URL_API = "https://script.google.com/macros/s/AKfycbwxRVRKIPux8LEnKPe2kgtTGLuT1iZXCmOxCHV73Gb0l0UiA8-CBcEPipTwRpQF222O6g/exec"
 
