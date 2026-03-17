@@ -8,137 +8,134 @@ import io
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Chef Inteligente Pro", layout="wide")
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 URL_API = "https://script.google.com/macros/s/AKfycbwxRVRKIPux8LEnKPe2kgtTGLuT1iZXCmOxCHV73Gb0l0UiA8-CBcEPipTwRpQF222O6g/exec"
 
 # --- FUNCIONES DE CONEXIÓN ---
 
-def guardar_en_sheets(ingrediente):
-    """Clasifica con IA, filtra no comestibles y envía a Google Sheets"""
+def obtener_despensa_real():
+    """lee los productos directamente desde google sheets"""
     try:
-        # 1. La IA clasifica y decide si es comestible
-        prompt = f"""Analiza el producto: '{ingrediente}'.
-        Determina si es un producto alimenticio.
-        Responde exclusivamente en formato JSON: {{"es_comestible": true/false, "categoria": "..."}}
-        Categorías posibles: Verdura, Carne, Lácteo, Fruta, Granos, Limpieza, Otros.
-        Si es un producto de limpieza, bolsa, o no comestible, marca es_comestible como false."""
+        response = requests.get(URL_API, timeout=10)
+        if response.status_code == 200:
+            return response.json() 
+        return []
+    except Exception:
+        return []
+
+def guardar_en_sheets(ingrediente):
+    """clasifica con ia, filtra no comestibles y envía a google sheets"""
+    try:
+        ingrediente = ingrediente.lower()
+        prompt = f"""analiza el producto: '{ingrediente}'.
+        determina si es un alimento. responde solo json: 
+        {{"es_comestible": true/false, "categoria": "..."}}"""
         
         response = model.generate_content(prompt)
         resultado = json.loads(response.text.replace("```json", "").replace("```", "").strip())
         
         if not resultado.get("es_comestible", False):
-            st.info(f"Omitido: '{ingrediente}' no es un producto alimenticio.")
+            st.info(f"omitido: '{ingrediente}' no es un alimento.")
             return "omitido"
 
-        # 2. Enviamos a Google
         datos = {"ingrediente": ingrediente, "categoria": resultado["categoria"]}
         response = requests.post(URL_API, json=datos, timeout=10)
-        
-        return True if response.status_code == 200 else False
+        return response.status_code == 200
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"error: {e}")
         return False
 
-def generar_menu():
-    prompt = """Genera un menú semanal (Lunes-Domingo) con Comida y Cena. Devuelve SÓLO JSON:
-    {"Lunes": {"Comida": "...", "Cena": "..."}, "Martes": {...}, ...}"""
+def generar_menu(ingredientes=None):
+    """genera el menú. si hay ingredientes, es de aprovechamiento; si no, es libre."""
+    if ingredientes:
+        contexto = f"tengo estos ingredientes: {', '.join(ingredientes)}. haz un menú de aprovechamiento."
+    else:
+        contexto = "haz un menú variado y creativo, sin restricciones de ingredientes."
+
+    prompt = f"""{contexto} genera un menú semanal (lunes-domingo) con comida y cena. 
+    usa solo minúsculas. devuelve sólo json:
+    {{"lunes": {{"comida": "...", "cena": "..."}}, "martes": {{...}}, ...}}"""
+    
     response = model.generate_content(prompt)
     texto = response.text.replace("```json", "").replace("```", "").strip()
     return json.loads(texto)
-
-# --- ESTILO VISUAL ---
-st.markdown("""
-    <style>
-    .stButton>button { border-radius: 20px; width: 100%; border: 1px solid #FF4B4B; }
-    </style>
-""", unsafe_allow_html=True)
 
 # --- INTERFAZ ---
 st.title("🍳 Chef Inteligente Pro")
 tab1, tab2, tab3 = st.tabs(["🛒 Despensa", "📅 Menú Semanal", "📸 Ticket"])
 
 with tab1:
-    st.header("🛒 Mi Despensa")
-    if 'despensa' not in st.session_state: st.session_state.despensa = []
+    st.header("🛒 Mi despensa")
     
-    nuevo_item = st.text_input("Añadir ingrediente manualmente:")
-    if st.button("Añadir"):
-        res = guardar_en_sheets(nuevo_item)
-        if res == True:
-            st.session_state.despensa.append(nuevo_item)
-            st.success(f"¡{nuevo_item} añadido!")
-        elif res == False:
-            st.error("Error al sincronizar.")
+    # botón de sincronización manual
+    if st.button("🔄 sincronizar con la nube"):
+        st.session_state.despensa = obtener_despensa_real()
+        st.rerun()
 
+    if 'despensa' not in st.session_state: 
+        st.session_state.despensa = obtener_despensa_real()
+    
+    nuevo_item = st.text_input("añadir ingrediente:")
+    if st.button("añadir"):
+        if guardar_en_sheets(nuevo_item):
+            st.session_state.despensa.append(nuevo_item.lower())
+            st.success(f"¡{nuevo_item} guardado!")
+
+    st.write("---")
     for item in st.session_state.despensa:
         st.write(f"✅ {item}")
 
 with tab2:
-    st.header("📅 Menú de la semana")
-    if st.button("Generar Menú"):
-        st.session_state.menu = generar_menu()
+    st.header("📅 Planificador de menús")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("✨ menú creativo (libre)"):
+            with st.spinner("creando menú sin límites..."):
+                st.session_state.menu = generar_menu()
+    
+    with col2:
+        if st.button("♻️ menú de aprovechamiento"):
+            if not st.session_state.get('despensa'):
+                st.warning("la despensa parece vacía.")
+            else:
+                with st.spinner("optimizando tu despensa..."):
+                    st.session_state.menu = generar_menu(st.session_state.despensa)
             
     if 'menu' in st.session_state:
         for dia, comidas in st.session_state.menu.items():
             with st.expander(f"📅 {dia}"):
-                st.write(f"**🍽️ Comida:** {comidas['Comida']}")
-                st.write(f"**🌙 Cena:** {comidas['Cena']}")
+                st.write(f"**🍽️ comida:** {comidas['comida']}")
+                st.write(f"**🌙 cena:** {comidas['cena']}")
 
 with tab3:
-    st.header("📸 Lector de Tickets")
-    archivo = st.file_uploader("Sube foto de tu ticket", type=["png", "jpg", "jpeg"])
+    st.header("📸 Lector de tickets")
+    archivo = st.file_uploader("sube tu ticket", type=["png", "jpg", "jpeg"])
     
     if archivo:
-        img = Image.open(archivo)
-        st.image(img, caption="Ticket subido", use_container_width=True)
-        
-        if st.button("Analizar Ticket"):
-            with st.spinner("Leyendo ticket con IA..."):
+        if st.button("analizar ticket"):
+            with st.spinner("leyendo..."):
                 try:
                     bytes_data = archivo.getvalue()
-                    # Pedimos explícitamente el formato y forzamos a que no dé explicaciones
-                    prompt_ticket = "Extrae los nombres de los productos de este ticket. Devuelve exclusivamente una lista en formato JSON de strings, sin texto adicional. Ejemplo: [\"manzanas\", \"detergente\"]"
-                    
-                    response = model.generate_content([
-                        {"mime_type": "image/jpeg", "data": bytes_data},
-                        prompt_ticket
-                    ])
-                    
-                    # Limpieza agresiva de la respuesta
-                    texto_raw = response.text
-                    if "```json" in texto_raw:
-                        texto_limpio = texto_raw.split("```json")[1].split("```")[0].strip()
-                    elif "```" in texto_raw:
-                        texto_limpio = texto_raw.split("```")[1].split("```")[0].strip()
-                    else:
-                        texto_limpio = texto_raw.strip()
-                    
-                    st.session_state.productos_detectados = json.loads(texto_limpio)
-                    st.rerun() # Recargamos para mostrar los inputs de validación
+                    prompt_ticket = "extrae los nombres de los productos. devuelve solo lista json de strings en minúsculas."
+                    response = model.generate_content([{"mime_type": "image/jpeg", "data": bytes_data}, prompt_ticket])
+                    st.session_state.productos_detectados = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"Error al procesar el ticket: {e}")
-                    st.write("Respuesta de la IA (para depurar):", response.text if 'response' in locals() else "Sin respuesta")
+                    st.error(f"error: {e}")
 
     if 'productos_detectados' in st.session_state:
-        st.subheader("✅ Valida los productos:")
-        # Creamos una copia para editar
+        st.subheader("✅ valida los productos:")
         productos_editados = []
         for i, prod in enumerate(st.session_state.productos_detectados):
-            nuevo_valor = st.text_input(f"Producto {i+1}", value=prod, key=f"ticket_prod_{i}")
+            nuevo_valor = st.text_input(f"producto {i+1}", value=prod, key=f"tk_{i}")
             productos_editados.append(nuevo_valor)
         
-        if st.button("Confirmar y filtrar"):
-            exitos = 0
+        if st.button("confirmar y filtrar"):
             for item in productos_editados:
-                res = guardar_en_sheets(item)
-                if res == True:
-                    st.session_state.despensa.append(item)
-                    exitos += 1
-            
-            if exitos > 0:
-                st.success(f"¡Sincronizados {exitos} productos comestibles!")
-            
-            # Limpiamos la lista de detectados tras procesar
+                if guardar_en_sheets(item) == True:
+                    st.session_state.despensa.append(item.lower())
             del st.session_state.productos_detectados
             st.rerun()
