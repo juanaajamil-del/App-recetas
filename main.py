@@ -15,6 +15,7 @@ if "GOOGLE_API_KEY" not in st.secrets:
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('gemini-2.5-flash')
 
+# URL de tu Google Apps Script
 URL_API = "https://script.google.com/macros/s/AKfycbwPgCPBDH_G__oUNXjcvnHytHg9aeL3DmmtDcMiPvxhs04t6cL9jAgHygYtCK2MztcfaQ/exec"
 
 # --- 1. FUNCIONES DE APOYO ---
@@ -52,9 +53,16 @@ def generar_menu_completo(ingredientes_dict=None):
     
     prompt = f'genera un menú semanal completo {tipo}. responde solo json minúsculas con estas llaves exactas: "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo". cada día debe tener "comida" y "cena".'
     res = model.generate_content(prompt)
-    # Limpieza de posibles marcas de markdown en la respuesta de la IA
     clean_res = res.text.replace("```json", "").replace("```", "").strip()
     return json.loads(clean_res)
+
+def regenerar_plato_individual(dia, momento, ingredientes_dict=None):
+    lista_ing = list(ingredientes_dict.keys()) if ingredientes_dict else []
+    contexto = f"usando ingredientes de esta despensa: {', '.join(lista_ing)}" if lista_ing else "de forma creativa"
+    
+    prompt = f"dame una alternativa para la {momento} del {dia} {contexto}. responde solo con el nombre del plato en minúsculas, sin json ni explicaciones."
+    res = model.generate_content(prompt)
+    return res.text.strip().lower()
 
 def generar_lista_compra(menu_final, despensa_dict):
     prompt = f'menú: {json.dumps(menu_final)}. despensa: {", ".join(despensa_dict.keys())}. responde solo una lista json de strings con lo que falta.'
@@ -81,9 +89,10 @@ with t1:
         st.session_state.despensa = obtener_despensa_real()
         st.rerun()
     
-    texto_lote = st.text_area("añadir ingredientes:")
+    texto_lote = st.text_area("añadir ingredientes (por comas o líneas):")
     if st.button("procesar e insertar"): 
-        procesar_lote_ingredientes(texto_lote)
+        with st.spinner("guardando..."):
+            procesar_lote_ingredientes(texto_lote)
 
     st.write("---")
     if st.session_state.despensa and isinstance(st.session_state.despensa, dict):
@@ -99,39 +108,56 @@ with t2:
     c1, c2 = st.columns(2)
     with c1:
         if st.button("✨ menú creativo"):
-            st.session_state.p_creativa = generar_menu_completo()
+            with st.spinner("generando..."):
+                st.session_state.p_creativa = generar_menu_completo()
     with c2:
         if st.button("♻️ menú aprovechamiento"):
-            st.session_state.p_aprovecho = generar_menu_completo(st.session_state.despensa)
+            with st.spinner("revisando despensa..."):
+                st.session_state.p_aprovecho = generar_menu_completo(st.session_state.despensa)
 
     col_izq, col_der = st.columns(2)
-    configs = [("p_creativa", col_izq, "creativa"), ("p_aprovecho", col_der, "aprovechamiento")]
+    configs = [("p_creativa", col_izq, "creativo"), ("p_aprovecho", col_der, "aprovechamiento")]
     
     for key, col, nombre in configs:
         with col:
             if key in st.session_state:
                 st.subheader(f"opción {nombre}")
-                # Usamos los días oficiales para evitar errores de tildes o nombres raros de la IA
                 for dia in dias_semana:
                     if dia in st.session_state[key]:
                         platos = st.session_state[key][dia]
                         with st.expander(f"📅 {dia.upper()}"):
-                            st.write(f"🍴 {platos.get('comida', 'no generado')}")
-                            if st.button(f"usar comida", key=f"btn_c_{key}_{dia}"):
+                            # --- COMIDA ---
+                            st.write(f"🍴 **comida:** {platos.get('comida')}")
+                            c1, c2 = st.columns(2)
+                            if c1.button(f"usar", key=f"u_c_{key}_{dia}"):
                                 st.session_state.menu_oficial[dia]["comida"] = platos.get('comida')
-                            st.write(f"🌙 {platos.get('cena', 'no generado')}")
-                            if st.button(f"usar cena", key=f"btn_n_{key}_{dia}"):
+                            if c2.button(f"🔄 otra", key=f"r_c_{key}_{dia}"):
+                                despensa = st.session_state.despensa if "aprovecho" in key else None
+                                st.session_state[key][dia]["comida"] = regenerar_plato_individual(dia, "comida", despensa)
+                                st.rerun()
+
+                            st.write("---")
+                            
+                            # --- CENA ---
+                            st.write(f"🌙 **cena:** {platos.get('cena')}")
+                            n1, n2 = st.columns(2)
+                            if n1.button(f"usar", key=f"u_n_{key}_{dia}"):
                                 st.session_state.menu_oficial[dia]["cena"] = platos.get('cena')
+                            if n2.button(f"🔄 otra", key=f"r_n_{key}_{dia}"):
+                                despensa = st.session_state.despensa if "aprovecho" in key else None
+                                st.session_state[key][dia]["cena"] = regenerar_plato_individual(dia, "cena", despensa)
+                                st.rerun()
 
     st.write("---")
-    st.subheader("📍 selección actual")
+    st.subheader("📍 selección semanal")
     st.table(st.session_state.menu_oficial)
     
     if st.button("💾 finalizar y guardar menú"):
-        payload = {"tipo": "menu_completo", "contenido": st.session_state.menu_oficial}
-        requests.post(URL_API, json=payload)
-        st.session_state.lista_compra = generar_lista_compra(st.session_state.menu_oficial, st.session_state.despensa)
-        st.success("¡menú guardado!")
+        with st.spinner("guardando..."):
+            payload = {"tipo": "menu_completo", "contenido": st.session_state.menu_oficial}
+            requests.post(URL_API, json=payload)
+            st.session_state.lista_compra = generar_lista_compra(st.session_state.menu_oficial, st.session_state.despensa)
+            st.success("¡menú guardado!")
 
 with t3:
     st.header("📝 mi semana")
@@ -143,16 +169,18 @@ with t3:
                     st.write(f"**comida:** {platos['comida']}\n\n**cena:** {platos['cena']}")
         with cl:
             st.subheader("🛒 faltas")
-            for ing in st.session_state.lista_compra: st.checkbox(ing, key=f"lc_{ing}")
+            for ing in st.session_state.lista_compra: 
+                st.checkbox(ing, key=f"lc_{ing}")
 
 with t4:
     archivo = st.file_uploader("sube ticket", type=["png", "jpg", "jpeg"])
     if archivo:
         if st.button("analizar ticket"):
-            img_data = archivo.getvalue()
-            res = model.generate_content([{"mime_type": "image/jpeg", "data": img_data}, "extrae productos lista json strings minúsculas."])
-            st.session_state.detectados = json.loads(res.text.replace("```json", "").replace("```", "").strip())
-            st.rerun()
+            with st.spinner("leyendo..."):
+                img_data = archivo.getvalue()
+                res = model.generate_content([{"mime_type": "image/jpeg", "data": img_data}, "extrae productos lista json strings minúsculas."])
+                st.session_state.detectados = json.loads(res.text.replace("```json", "").replace("```", "").strip())
+                st.rerun()
 
     if 'detectados' in st.session_state:
         txt = st.text_area("valida:", value=", ".join(st.session_state.detectados))
